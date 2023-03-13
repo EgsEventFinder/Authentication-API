@@ -10,6 +10,7 @@ import redis
 from datetime import datetime, timedelta, timezone
 from functools import wraps
 from flask_jwt_extended import jwt_required, create_access_token, get_jwt_identity, get_jwt
+import requests
 
 auth = Blueprint("auth", __name__)
 
@@ -22,6 +23,9 @@ jwt_redis_blocklist = redis.StrictRedis(
     host="127.0.0.1", port=6379, db=0, decode_responses=True
 )
 #localhost
+
+#TODO: Fazer a parte de revokar o token (logout) usando o redis (stor disse q podia ser) ou criar uma database
+#TODO:  Criar um atributo na BD a indicar se fez os passos tds do registo (atributo -> registered)
 
 
 #Decorater to check if token is revoked in the blockList otherwise check with jwt_required decorator
@@ -37,6 +41,29 @@ def token_not_in_blackList(fn):
             #return jwt_required()(fn)(*args, **kwargs)
     return decorated
 
+
+# def verifyToken(f):
+#     @wraps(f)
+#     def decorated(*args, **kwargs):
+#         token = None
+
+#         if 'Authorization' in request.headers:
+#             token = request.headers['Authorization'].split()[1]
+
+#         print(token)
+        
+#         if not token:
+#             return jsonify({'message': 'Token is missing!'}), 401
+
+#         try:
+#             data = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+#             current_user = User.query.filter_by(id=data['userID']).first()
+#         except jwt.DecodeError:
+#             return jsonify({'message': 'Token is invalid!'}), 401
+#         except jwt.ExpiredSignatureError:
+#             return jsonify({'message': 'Token expired!'}), 401
+#         return f(current_user, *args, **kwargs)
+#     return decorated
 
 @auth.route('/register', methods=['GET', 'POST'])
 def register():
@@ -80,17 +107,17 @@ def register():
             #msg.body = 'Hi {} {}! Your link to confirm the email is {}'.format(new_user.firstName, new_user.lastName, link)
             #mail.send(msg)
             
-            #data = jsonify({"to": email, "type": "email_verification", "url_link_verification": link})
-            # headers = {'Content-Type': 'application/json'} # Set the headers for the request
-            # url = 'http://localhost:3000/notification' # Set the URL of the API endpoint
-            # response = requests.post(url, json=data, headers=headers) # Make a POST request to the API with the custom data
-            # return jsonify(response.json()) # Return the API's response in JSON format
+            data = jsonify({"to": email, "type": "email_verification", "url_link_verification": link})
+            headers = {'Content-Type': 'application/json'} # Set the headers for the request
+            url = 'http://localhost:3000/notification' # Set the URL of the API endpoint
+            response = requests.post(url, json=data, headers=headers) # Make a POST request to the API with the custom data
+            return jsonify(response.json()) # Return the API's response in JSON format
             
             
-            id = id + 1 #increment id for the next user
+            #id = id + 1 #increment id for the next user
             #return '<h1>The verification email has been sent to {}!</h1>'.format(email)
             #return jsonify(msg='The verification email has been sent to {}!'.format(email)), 200
-            return jsonify({"to": email, "type": "email_verification", "url_link_verification": link}), 200
+            #return jsonify({"to": email, "type": "email_verification", "url_link_verification": link}), 200
         
         #return jsonify(first_Name=firstName, last_Name=lastName, username=username, Email=email, Password=password)
     
