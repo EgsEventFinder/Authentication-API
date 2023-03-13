@@ -7,4 +7,5 @@ itsdangerous==2.1.2
 PyJWT==2.6.0
 python-dotenv==1.0.0
 redis==4.5.1
+requests==2.25.1
 Werkzeug==2.2.3
