@@ -55,10 +55,12 @@ def create_app():
     app.config['JWT_BLACKLIST_TOKEN_CHECKS'] = ['access'] #Access token should be check against the blacklist
 
     
-    from .auth import auth as auth_blueprint
-    app.register_blueprint(auth_blueprint)
+    #from .auth import auth as auth_blueprint
+    #app.register_blueprint(auth_blueprint)
+    from .auth import auth
+    app.register_blueprint(auth, url_prefix='/')
     
-    from .models import User
+    #from .models import User
     with app.app_context():
         db.create_all()
     
