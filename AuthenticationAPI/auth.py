@@ -1,15 +1,15 @@
-from . import db, mail, SECRET_KEY
-from flask import Flask, Blueprint, redirect, url_for, render_template, request, jsonify, flash
+from . import db, mail, SECRET_KEY, ACCESS_EXPIRES
+from flask import Flask, Blueprint, redirect, url_for, render_template, request, jsonify
 from .models import User
 from werkzeug.security import generate_password_hash, check_password_hash
-#from flask_login import login_user, logout_user
 from itsdangerous import URLSafeTimedSerializer, SignatureExpired
 from flask_mail import Message
 import json
 import jwt
+import redis
 from datetime import datetime, timedelta, timezone
-#from functools import wraps
-from flask_jwt_extended import jwt_required, create_access_token, get_jwt_identity, set_access_cookies
+from functools import wraps
+from flask_jwt_extended import jwt_required, create_access_token, get_jwt_identity, get_jwt
 
 auth = Blueprint("auth", __name__)
 
@@ -18,37 +18,55 @@ id = 1
 
 s = URLSafeTimedSerializer('Thisisasecret!')
 
+jwt_redis_blocklist = redis.StrictRedis(
+    host="127.0.0.1", port=6379, db=0, decode_responses=True
+)
+#localhost
 
-#Tentar fazer de outra maneira, maneira com o create_access_token()
+#TODO: Fazer a parte de revokar o token (logout) usando o redis (stor disse q podia ser) ou criar uma database
+#TODO:  Criar um atributo na BD a indicar se fez os passos tds do registo (atributo -> registered)
 
-# def verifyToken(f): #Não está a funcionar
+
+#Decorater to check if token is revoked in the blockList otherwise check with jwt_required decorator
+def token_not_in_blackList(fn):
+    @wraps(fn)
+    def decorated(*args, **kwargs):
+        jti = get_jwt()['jti']
+        token_in_blocklist = jwt_redis_blocklist.get(jti) is not None
+        if token_in_blocklist:
+            return jsonify(msg='Token has been revoked'), 401
+        else:
+            return fn(*args, **kwargs)
+            #return jwt_required()(fn)(*args, **kwargs)
+    return decorated
+
+
+# def verifyToken(f):
 #     @wraps(f)
 #     def decorated(*args, **kwargs):
 #         token = None
-#         print(request.headers)
-#         #token = request.headers.get('Authorization')
+
+#         if 'Authorization' in request.headers:
+#             token = request.headers['Authorization'].split()[1]
+
+#         print(token)
         
-#         if 'x-access-token' in request.headers:
-#             token = request.headers['x-access-token']
-            
 #         if not token:
-#             return jsonify({
-#                 'message': 'Token is missing!'
-#             }), 401
-        
+#             return jsonify({'message': 'Token is missing!'}), 401
+
 #         try:
-#             data = jwt.decode(token, SECRET_KEY)
+#             data = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
 #             current_user = User.query.filter_by(id=data['userID']).first()
 #         except jwt.DecodeError:
 #             return jsonify({'message': 'Token is invalid!'}), 401
 #         except jwt.ExpiredSignatureError:
 #             return jsonify({'message': 'Token expired!'}), 401
-#         return  f(current_user, *args, **kwargs)
+#         return f(current_user, *args, **kwargs)
 #     return decorated
 
 @auth.route('/register', methods=['GET', 'POST'])
 def register():
-    global id
+    id = 0
     if request.method == "POST":
         firstName = request.form.get("firstName")
         lastName = request.form.get("lastName")
@@ -60,19 +78,45 @@ def register():
         if user:
             #flash('Username already exists in', category = "error")
             return jsonify({'msg': 'Username already exists'}), 401
+        elif len(email) <= 4:
+            return jsonify({'msg': 'Email too short!'}), 406
+        elif len(firstName) <= 2:
+            return jsonify({'msg': 'First Name must be greater than 1 character!'}), 406
+        elif len(username) <= 2:
+            return jsonify({'msg': 'Last Name must be greater than 1 character!'}), 406
+        elif len(lastName) <= 2:
+            return jsonify({'msg': 'Last Name must be greater than 1 character!'}), 406
+        elif len(password) < 3:
+            return jsonify({'msg': 'Password must be greater than 3 character!'}), 406
         else:
+            #get last id of the table
+            last_user = User.query.order_by(User.id.desc()).first()
+            if not last_user: #if the database its empty
+                id = 1
+            else:
+                id = last_user.id + 1
+            
             new_user = User(id= id,firstName=firstName, lastName=lastName, username=username, email=email, password = generate_password_hash(password, method='sha256'))
             db.session.add(new_user)
             db.session.commit()
             token = s.dumps(email, salt='email-confirm')
-            msg = Message('Confirm your Email', sender='eventFinderUA@outlook.com', recipients=[email])
+            
+            #msg = Message('Confirm your Email', sender='eventFinderUA@outlook.com', recipients=[email])
             link = url_for('auth.validate', token=token, _external=True)
-            msg.body = 'Hi {} {}! Your link to confirm the email is {}'.format(new_user.firstName, new_user.lastName, link)
-            mail.send(msg)
-            #login_user(user) #indica que o user está loggado, se usarmos o @login_required numa função qualquer, o utilizador tem de estar logado, ou seja, tem de ser corrido o comando login_user(user)
+            #msg.body = 'Hi {} {}! Your link to confirm the email is {}'.format(new_user.firstName, new_user.lastName, link)
+            #mail.send(msg)
+            
+            #data = jsonify({"to": email, "type": "email_verification", "url_link_verification": link})
+            # headers = {'Content-Type': 'application/json'} # Set the headers for the request
+            # url = 'http://localhost:3000/notification' # Set the URL of the API endpoint
+            # response = requests.post(url, json=data, headers=headers) # Make a POST request to the API with the custom data
+            # return jsonify(response.json()) # Return the API's response in JSON format
+            
+            
             id = id + 1 #increment id for the next user
             #return '<h1>The verification email has been sent to {}!</h1>'.format(email)
-            return jsonify(msg='The verification email has been sent to {}!'.format(email)), 200
+            #return jsonify(msg='The verification email has been sent to {}!'.format(email)), 200
+            return jsonify({"to": email, "type": "email_verification", "url_link_verification": link}), 200
         
         #return jsonify(first_Name=firstName, last_Name=lastName, username=username, Email=email, Password=password)
     
@@ -85,7 +129,6 @@ def validate(token):
         #TODO: Secalhar adicionar um atributo a true na base de dados qnd for feita a verificação
     except SignatureExpired:
         return jsonify({'message': 'Token expired!'}), 401
-    #return redirect(url_for('auth.login'))
     return jsonify({'message': 'Registration successful!'}), 200
 
 @auth.route('/login', methods=['GET', 'POST'])
@@ -103,67 +146,96 @@ def login():
                 #     'userID': user.id,
                 #     'username': user.username,
                 #     'email': user.email,
-                #     'exp': datetime.timestamp(datetime.now(timezone.utc) + timedelta(minutes=1)) #expira dentro de 1 minuto
+                #     'exp': datetime.timestamp(datetime.now(timezone.utc) + timedelta(minutes=5)) #expira dentro de 1 minuto
                 #     #'exp': datetime.datetime.utcnow() + datetime.timedelta(minutes=1)  
-                # }, SECRET_KEY, algorithm='HS256')
-                #return jsonify({'token': token.encode().decode('utf-8')})
+                # }, SECRET_KEY)
+                # return jsonify({'token': token.encode().decode('utf-8')})
                 
                 # response = jsonify({"msg": "login successful"})
                 # token = create_access_token(identity=user.id)
                 # set_access_cookies(response, token)
                 #return response
                 
-                return jsonify({'access_token':token, 'Authorization':'Bearer {}'.format(token)}), 200
+                return jsonify({'msg': 'Login was a success!', 'access_token':token, 'Authorization':'Bearer {}'.format(token)}), 200
             else:
                 #flash('Incorrect password, try again', category='error')  
-                return jsonify(message='Invalid password!') 
+                return jsonify(message='Invalid password!'), 401 
         else:
             #flash('Email doenst exist, try again!', category='error')
-            return jsonify(message='Email doenst exist!') 
+            return jsonify(message='Email doenst exist!'), 401 
                 
     return render_template("login.html")
 
+@auth.route('/user/email/<userEmail>', methods=['GET'])
+def getUserID(email):
+    user = User.query.filter_by(email=email).first()
+    id = str(user.id)
+    return jsonify(information=id)
 
-@auth.route('/logout')
-#Pode se fazer usando jwt_redis_blocklist ou uma database para guardar os token blockList
+@auth.route('user/id/<userID>', methods=['GET'])
+def getUserEmail(id):
+    user = User.query.filter_by(id=id).first()
+    email = user.email
+    return jsonify(information=email)
+
+@auth.route('/logout', methods=['DELETE'])
 @jwt_required()
-#@verifyToken
+@token_not_in_blackList
 def logout():
+    jti = get_jwt()['jti']
+    print(f"jti: {jti}")
+    jwt_redis_blocklist.set(jti, "", ex=ACCESS_EXPIRES)
+    response = jsonify(msg='User loggout successfully!')
+    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    return response, 200
+
+@auth.route('/protected', methods=['GET'])
+@jwt_required()
+@token_not_in_blackList
+def protected():
+    jti = get_jwt()['jti']
+    token_in_blocklist = jwt_redis_blocklist.get(jti) is not None
+    if token_in_blocklist:
+        return jsonify(msg='Token has been revoked'), 401
+    else:
+        return jsonify(secret_message='SECRET!'), 200
+
+
+@auth.route('/verifyToken2', methods=['GET', 'POST'])
+@jwt_required()
+@token_not_in_blackList
+def verifyToken2():
+    return jsonify(msg='Token is validated.')
+
+@auth.route('/verifyToken/<token>')
+def verifyToken(token):
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=['HS256'])
+        return jsonify({"id": payload['userID'], 'message': 'Token is validated.'}) #payload['userID']
+    except jwt.ExpiredSignatureError:
+        return jsonify(msg='Signature expired. Please log in again.')
+    except jwt.InvalidTokenError:
+        return jsonify(msg='Invalid token. Please log in again.')
+ 
     
-    return ""
+"""
+def delete
+def showUsers
+def teste
+
+FUNÇÕES AUXILIARES
 
 """
-    Teste
-"""
+
 @auth.route('/teste', methods=['GET', 'POST'])
 @jwt_required()
+@token_not_in_blackList
 def teste():
     user = get_jwt_identity()
     id = user['userID']
     user_fromDB = User.query.filter_by(id=id).first()
     return "Only Logged in users can see it. User {} is logged in!!".format(user_fromDB.username)
 
-
-#Não funciona
-@auth.route('/verifyToken/<token>')
-def verifyToken(token):
-    
-    try:
-        payload = jwt.decode(token, SECRET_KEY)
-        return jsonify({"id": payload['userID'], 'message': 'User is logged in'}) #payload['userID']
-    except jwt.ExpiredSignatureError:
-        return 'Signature expired. Please log in again.'
-    except jwt.InvalidTokenError:
-        return 'Invalid token. Please log in again.'
-
-"""
-def delete
-def showUsers
-def getUser
-
-FUNÇÕES AUXILIARES
-
-"""
 @auth.route('/delete/<id>', methods=['GET'])
 def delete(id):
     user = User.query.filter_by(id = id).first()
@@ -182,11 +254,6 @@ def showUsers():
     #return "You're Looged In, watch the user's in the database"
     
 
-@auth.route('/getUser/<userName>', methods=['GET'])
-def getUser(userName):
-    user = User.query.filter_by(username=userName).first()
-    id = str(user.id)
-    return id
-
     
+
 
