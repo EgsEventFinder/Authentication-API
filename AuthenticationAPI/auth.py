@@ -23,9 +23,6 @@ jwt_redis_blocklist = redis.StrictRedis(
 )
 #localhost
 
-#TODO: Fazer a parte de revokar o token (logout) usando o redis (stor disse q podia ser) ou criar uma database
-#TODO:  Criar um atributo na BD a indicar se fez os passos tds do registo (atributo -> registered)
-
 
 #Decorater to check if token is revoked in the blockList otherwise check with jwt_required decorator
 def token_not_in_blackList(fn):
@@ -40,29 +37,6 @@ def token_not_in_blackList(fn):
             #return jwt_required()(fn)(*args, **kwargs)
     return decorated
 
-
-# def verifyToken(f):
-#     @wraps(f)
-#     def decorated(*args, **kwargs):
-#         token = None
-
-#         if 'Authorization' in request.headers:
-#             token = request.headers['Authorization'].split()[1]
-
-#         print(token)
-        
-#         if not token:
-#             return jsonify({'message': 'Token is missing!'}), 401
-
-#         try:
-#             data = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
-#             current_user = User.query.filter_by(id=data['userID']).first()
-#         except jwt.DecodeError:
-#             return jsonify({'message': 'Token is invalid!'}), 401
-#         except jwt.ExpiredSignatureError:
-#             return jsonify({'message': 'Token expired!'}), 401
-#         return f(current_user, *args, **kwargs)
-#     return decorated
 
 @auth.route('/register', methods=['GET', 'POST'])
 def register():
