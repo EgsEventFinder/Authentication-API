@@ -24,6 +24,9 @@ jwt_redis_blocklist = redis.StrictRedis(
 )
 #localhost
 
+#TODO: Fazer a parte de revokar o token (logout) usando o redis (stor disse q podia ser) ou criar uma database
+#TODO:  Criar um atributo na BD a indicar se fez os passos tds do registo (atributo -> registered)
+
 
 #Decorater to check if token is revoked in the blockList otherwise check with jwt_required decorator
 def token_not_in_blackList(fn):
@@ -39,15 +42,39 @@ def token_not_in_blackList(fn):
     return decorated
 
 
+# def verifyToken(f):
+#     @wraps(f)
+#     def decorated(*args, **kwargs):
+#         token = None
+
+#         if 'Authorization' in request.headers:
+#             token = request.headers['Authorization'].split()[1]
+
+#         print(token)
+        
+#         if not token:
+#             return jsonify({'message': 'Token is missing!'}), 401
+
+#         try:
+#             data = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+#             current_user = User.query.filter_by(id=data['userID']).first()
+#         except jwt.DecodeError:
+#             return jsonify({'message': 'Token is invalid!'}), 401
+#         except jwt.ExpiredSignatureError:
+#             return jsonify({'message': 'Token expired!'}), 401
+#         return f(current_user, *args, **kwargs)
+#     return decorated
+
 @auth.route('/register', methods=['GET', 'POST'])
 def register():
     id = 0
     if request.method == "POST":
-        firstName = request.form.get("firstName")
-        lastName = request.form.get("lastName")
-        username = request.form.get("username")
-        email = request.form.get("email")
-        password = request.form.get("password")
+        data = request.get_json()
+        firstName = data.get("firstName")
+        lastName = data.get("lastName")
+        username = data.get("username")
+        email = data.get("email")
+        password = data.get("password")
         
         user = User.query.filter_by(username=username).first()#Secalhar fazer query por email
         if user:
@@ -81,11 +108,12 @@ def register():
             #msg.body = 'Hi {} {}! Your link to confirm the email is {}'.format(new_user.firstName, new_user.lastName, link)
             #mail.send(msg)
             
-            data = jsonify({"to": email, "type": "email_verification", "url_link_verification": link})
+            data = {"to": email, "type": "email_verification", "url_link_verification": link}
             headers = {'Content-Type': 'application/json'} # Set the headers for the request
             url = 'http://localhost:3000/notification' # Set the URL of the API endpoint
             response = requests.post(url, json=data, headers=headers) # Make a POST request to the API with the custom data
-            return jsonify(response.json()) # Return the API's response in JSON format
+            
+            return response.content, response.status_code# Return the API's response in JSON format
             
             
             #id = id + 1 #increment id for the next user
@@ -109,8 +137,12 @@ def validate(token):
 @auth.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == "POST":
-        email = request.form.get("email")
-        password = request.form.get("password")
+        data = request.get_json()
+        email = data.get("email")
+        password = data.get("password")
+        #email = request.form.get("email")
+        #password = request.form.get("password")
+        
         user = User.query.filter_by(email=email).first()
         if user:
             if check_password_hash(user.password, password):
