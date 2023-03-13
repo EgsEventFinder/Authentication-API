@@ -15,8 +15,8 @@ mail = Mail()
 jtw = JWTManager()
 load_dotenv()
 
-#SECRET_KEY = 'BUEDASECRETO'
 SECRET_KEY = os.getenv('SECRET_KEY')
+ACCESS_EXPIRES = timedelta(minutes=5)
 app = Flask(__name__)
 
 def create_app():
@@ -49,8 +49,10 @@ def create_app():
     mail.init_app(app)
     jtw.init_app(app)
     
-    app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(minutes=5)
+    app.config["JWT_ACCESS_TOKEN_EXPIRES"] = ACCESS_EXPIRES
     app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY')
+    app.config['JWT_BLACKLIST_ENABLED'] = True
+    app.config['JWT_BLACKLIST_TOKEN_CHECKS'] = ['access'] #Access token should be check against the blacklist
 
     
     from .auth import auth as auth_blueprint
