@@ -22,8 +22,6 @@ s = URLSafeTimedSerializer('Thisisasecret!')
 jwt_redis_blocklist = redis.StrictRedis(
     host="127.0.0.1", port=6379, db=0, decode_responses=True
 )
-#localhost
-
 
 #Decorater to check if token is revoked in the blockList otherwise check with jwt_required decorator
 def token_not_in_blackList(fn):
@@ -71,12 +69,21 @@ def register():
             else:
                 id = last_user.id + 1
             
-            new_user = User(id= id,firstName=firstName, lastName=lastName, username=username, email=email, password = generate_password_hash(password, method='sha256'))
-            db.session.add(new_user)
-            db.session.commit()
-            token = s.dumps(email, salt='email-confirm')
+            json_obj = {
+                "id": id,
+                "firstName": firstName,
+                "lastName": lastName,
+                "username": username,
+                "email": email,
+                "password": password
+            }
+            info = json.dumps(json_obj)
+            token = s.dumps(info, salt='email-confirm')
             
+            #msg = Message('Confirm your Email', sender='eventFinderUA@outlook.com', recipients=[email])
             link = url_for('auth.validate', token=token, _external=True)
+            #msg.body = 'Hi {} {}! Your link to confirm the email is {}'.format(new_user.firstName, new_user.lastName, link)
+            #mail.send(msg)
             
             data = {"to": email, "type": "email_verification", "url_link_verification": link}
             headers = {'Content-Type': 'application/json'} # Set the headers for the request
@@ -90,8 +97,19 @@ def register():
 @auth.route('/validate/<token>')
 def validate(token):
     try:
-        email = s.loads(token, salt='email-confirm', max_age=60) #Expira em 60 segundos
-        #TODO: Secalhar adicionar um atributo a true na base de dados qnd for feita a verificação
+        user_info_str = s.loads(token, salt='email-confirm', max_age=3600) #Expira em 300 segundos = 5 minutos
+        user_info = json.loads(user_info_str)
+        id = user_info['id']
+        firstName = user_info['firstName']
+        lastName = user_info['lastName']
+        username =  user_info['username']
+        email =  user_info['email']
+        password = user_info['password']
+        
+        #Add user to the database
+        new_user = User(id= id,firstName=firstName, lastName=lastName, username=username, email=email, password = generate_password_hash(password, method='sha256'))
+        db.session.add(new_user)
+        db.session.commit()
     except SignatureExpired:
         return jsonify({'message': 'Token expired!'}), 401
     return jsonify({'message': 'Registration successful!'}), 200
@@ -102,8 +120,6 @@ def login():
         data = request.get_json()
         email = data.get("email")
         password = data.get("password")
-        #email = request.form.get("email")
-        #password = request.form.get("password")
         
         user = User.query.filter_by(email=email).first()
         if user:
@@ -119,7 +135,12 @@ def login():
                 #     #'exp': datetime.datetime.utcnow() + datetime.timedelta(minutes=1)  
                 # }, SECRET_KEY)
                 # return jsonify({'token': token.encode().decode('utf-8')})
-                                
+                
+                # response = jsonify({"msg": "login successful"})
+                # token = create_access_token(identity=user.id)
+                # set_access_cookies(response, token)
+                #return response
+                
                 return jsonify({'msg': 'Login was a success!', 'access_token':token, 'Authorization':'Bearer {}'.format(token)}), 200
             else:
                 #flash('Incorrect password, try again', category='error')  
@@ -215,7 +236,6 @@ def showUsers():
         user = {"id": user.id, "firstName": user.firstName, "lastName": user.lastName, "username" : user.username, "email": user.email, "password" : user.password}
         usersList.append(user)
     return json.dumps(usersList, indent=10)
-    #return "You're Looged In, watch the user's in the database"
     
 
     
