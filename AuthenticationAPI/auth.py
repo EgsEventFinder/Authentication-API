@@ -14,8 +14,6 @@ import requests
 
 auth = Blueprint("auth", __name__)
 
-global id
-id = 1
 
 s = URLSafeTimedSerializer('Thisisasecret!')
 
@@ -62,6 +60,7 @@ def register():
         elif len(password) < 3:
             return jsonify({'msg': 'Password must be greater than 3 character!'}), 406
         else:
+            id = 0
             #get last id of the table
             last_user = User.query.order_by(User.id.desc()).first()
             if not last_user: #if the database its empty
@@ -97,7 +96,7 @@ def register():
 @auth.route('/validate/<token>')
 def validate(token):
     try:
-        user_info_str = s.loads(token, salt='email-confirm', max_age=3600) #Expira em 300 segundos = 5 minutos
+        user_info_str = s.loads(token, salt='email-confirm', max_age=600) #Expira em 600 segundos = 10 minutos
         user_info = json.loads(user_info_str)
         id = user_info['id']
         firstName = user_info['firstName']
