@@ -103,26 +103,15 @@ def register():
             db.session.commit()
             token = s.dumps(email, salt='email-confirm')
             
-            #msg = Message('Confirm your Email', sender='eventFinderUA@outlook.com', recipients=[email])
             link = url_for('auth.validate', token=token, _external=True)
-            #msg.body = 'Hi {} {}! Your link to confirm the email is {}'.format(new_user.firstName, new_user.lastName, link)
-            #mail.send(msg)
             
             data = {"to": email, "type": "email_verification", "url_link_verification": link}
             headers = {'Content-Type': 'application/json'} # Set the headers for the request
-            url = 'http://localhost:3000/notification' # Set the URL of the API endpoint
+            url = 'http://localhost:3003/notification' # Set the URL of the API endpoint
             response = requests.post(url, json=data, headers=headers) # Make a POST request to the API with the custom data
             
             return response.content, response.status_code# Return the API's response in JSON format
             
-            
-            #id = id + 1 #increment id for the next user
-            #return '<h1>The verification email has been sent to {}!</h1>'.format(email)
-            #return jsonify(msg='The verification email has been sent to {}!'.format(email)), 200
-            #return jsonify({"to": email, "type": "email_verification", "url_link_verification": link}), 200
-        
-        #return jsonify(first_Name=firstName, last_Name=lastName, username=username, Email=email, Password=password)
-    
     return render_template("register.html")
 
 @auth.route('/validate/<token>')
@@ -157,12 +146,7 @@ def login():
                 #     #'exp': datetime.datetime.utcnow() + datetime.timedelta(minutes=1)  
                 # }, SECRET_KEY)
                 # return jsonify({'token': token.encode().decode('utf-8')})
-                
-                # response = jsonify({"msg": "login successful"})
-                # token = create_access_token(identity=user.id)
-                # set_access_cookies(response, token)
-                #return response
-                
+                                
                 return jsonify({'msg': 'Login was a success!', 'access_token':token, 'Authorization':'Bearer {}'.format(token)}), 200
             else:
                 #flash('Incorrect password, try again', category='error')  
