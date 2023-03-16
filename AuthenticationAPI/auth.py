@@ -20,6 +20,7 @@ s = URLSafeTimedSerializer('Thisisasecret!')
 jwt_redis_blocklist = redis.StrictRedis(
     host="127.0.0.1", port=6379, db=0, decode_responses=True
 )
+#localhost
 
 #Decorater to check if token is revoked in the blockList otherwise check with jwt_required decorator
 def token_not_in_blackList(fn):
@@ -79,17 +80,15 @@ def register():
             info = json.dumps(json_obj)
             token = s.dumps(info, salt='email-confirm')
             
-            #msg = Message('Confirm your Email', sender='eventFinderUA@outlook.com', recipients=[email])
             link = url_for('auth.validate', token=token, _external=True)
-            #msg.body = 'Hi {} {}! Your link to confirm the email is {}'.format(new_user.firstName, new_user.lastName, link)
-            #mail.send(msg)
             
-            data = {"to": email, "type": "email_verification", "url_link_verification": link}
-            headers = {'Content-Type': 'application/json'} # Set the headers for the request
-            url = 'http://localhost:3003/notification' # Set the URL of the API endpoint
-            response = requests.post(url, json=data, headers=headers) # Make a POST request to the API with the custom data
+            data = {
+                "to": email,
+                "subject": "Confirm registration",
+                "msg": "Hi {} {}, your confirmation link is {}".format(firstName,lastName,link)
+            }
             
-            return response.content, response.status_code# Return the API's response in JSON format
+            return data, 200
             
     return render_template("register.html")
 
@@ -119,6 +118,8 @@ def login():
         data = request.get_json()
         email = data.get("email")
         password = data.get("password")
+        #email = request.form.get("email")
+        #password = request.form.get("password")
         
         user = User.query.filter_by(email=email).first()
         if user:
@@ -135,32 +136,14 @@ def login():
                 # }, SECRET_KEY)
                 # return jsonify({'token': token.encode().decode('utf-8')})
                 
-                # response = jsonify({"msg": "login successful"})
-                # token = create_access_token(identity=user.id)
-                # set_access_cookies(response, token)
-                #return response
-                
                 return jsonify({'msg': 'Login was a success!', 'access_token':token, 'Authorization':'Bearer {}'.format(token)}), 200
-            else:
-                #flash('Incorrect password, try again', category='error')  
+            else: 
                 return jsonify(message='Invalid password!'), 401 
         else:
-            #flash('Email doenst exist, try again!', category='error')
             return jsonify(message='Email doenst exist!'), 401 
                 
     return render_template("login.html")
 
-@auth.route('/user/email/<userEmail>', methods=['GET'])
-def getUserID(email):
-    user = User.query.filter_by(email=email).first()
-    id = str(user.id)
-    return jsonify(information=id)
-
-@auth.route('user/id/<userID>', methods=['GET'])
-def getUserEmail(id):
-    user = User.query.filter_by(id=id).first()
-    email = user.email
-    return jsonify(information=email)
 
 @auth.route('/logout', methods=['DELETE'])
 @jwt_required()
@@ -172,6 +155,7 @@ def logout():
     response = jsonify(msg='User loggout successfully!')
     response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
     return response, 200
+    
 
 @auth.route('/protected', methods=['GET'])
 @jwt_required()
@@ -185,23 +169,21 @@ def protected():
         return jsonify(secret_message='SECRET!'), 200
 
 
-@auth.route('/verifyToken2', methods=['GET', 'POST'])
+@auth.route('/verifyToken', methods=['GET'])
 @jwt_required()
 @token_not_in_blackList
-def verifyToken2():
-    return jsonify(msg='Token is validated.')
-
-@auth.route('/verifyToken/<token>')
-def verifyToken(token):
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=['HS256'])
-        return jsonify({"id": payload['userID'], 'message': 'Token is validated.'}) #payload['userID']
-    except jwt.ExpiredSignatureError:
-        return jsonify(msg='Signature expired. Please log in again.')
-    except jwt.InvalidTokenError:
-        return jsonify(msg='Invalid token. Please log in again.')
- 
-    
+def verifyToken():
+    subject = get_jwt()['sub'] # Return a dict -> 'sub' : {'userId': <id>}
+    user_id = subject['userID']
+    user = User.query.filter_by(id=user_id).first()
+    data = {
+        "user_id" : user.id,
+        "user_email": user.email,
+        "username": user.username,
+        "msg": "Token is validated."
+    }
+    return data, 200
+        
 """
 def delete
 def showUsers
