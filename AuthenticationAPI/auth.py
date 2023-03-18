@@ -1,16 +1,12 @@
-from . import db, mail, SECRET_KEY, ACCESS_EXPIRES
-from flask import Flask, Blueprint, redirect, url_for, render_template, request, jsonify
+from . import db, SECRET_KEY, ACCESS_EXPIRES
+from flask import Flask, Blueprint, url_for, render_template, request, jsonify
 from .models import User
 from werkzeug.security import generate_password_hash, check_password_hash
 from itsdangerous import URLSafeTimedSerializer, SignatureExpired
-from flask_mail import Message
 import json
-import jwt
 import redis
-from datetime import datetime, timedelta, timezone
 from functools import wraps
 from flask_jwt_extended import jwt_required, create_access_token, get_jwt_identity, get_jwt
-import requests
 
 auth = Blueprint("auth", __name__)
 
@@ -84,8 +80,7 @@ def register():
             
             data = {
                 "to": email,
-                "subject": "Confirm registration",
-                "msg": "Hi {} {}, your confirmation link is {}".format(firstName,lastName,link)
+                "link": link
             }
             
             return data, 200
@@ -118,8 +113,6 @@ def login():
         data = request.get_json()
         email = data.get("email")
         password = data.get("password")
-        #email = request.form.get("email")
-        #password = request.form.get("password")
         
         user = User.query.filter_by(email=email).first()
         if user:
@@ -135,15 +128,16 @@ def login():
                 #     #'exp': datetime.datetime.utcnow() + datetime.timedelta(minutes=1)  
                 # }, SECRET_KEY)
                 # return jsonify({'token': token.encode().decode('utf-8')})
-                
+                                
                 return jsonify({'msg': 'Login was a success!', 'access_token':token, 'Authorization':'Bearer {}'.format(token)}), 200
-            else: 
+            else:
+                #flash('Incorrect password, try again', category='error')  
                 return jsonify(message='Invalid password!'), 401 
         else:
+            #flash('Email doenst exist, try again!', category='error')
             return jsonify(message='Email doenst exist!'), 401 
                 
     return render_template("login.html")
-
 
 @auth.route('/logout', methods=['DELETE'])
 @jwt_required()
@@ -155,7 +149,6 @@ def logout():
     response = jsonify(msg='User loggout successfully!')
     response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
     return response, 200
-    
 
 @auth.route('/protected', methods=['GET'])
 @jwt_required()
@@ -183,7 +176,8 @@ def verifyToken():
         "msg": "Token is validated."
     }
     return data, 200
-        
+
+ 
 """
 def delete
 def showUsers
