@@ -138,7 +138,17 @@ def login():
             return jsonify(message='Email doenst exist!'), 401 
                 
     return render_template("login.html")
-
+    
+    
+@auth.route('/user/email/<email>', methods=['GET'])
+def getUserID(email):
+    user = User.query.filter_by(email=email).first()
+    if user:
+        #id = str(user.id)
+        return jsonify({"Information": "Sucess", "id": user.id, "username": user.username, "firstName": user.firstName, "lastName": user.lastName}), 200
+    return jsonify(Infomation="Not found"), 404
+    
+    
 @auth.route('/logout', methods=['DELETE'])
 @jwt_required()
 @token_not_in_blackList
