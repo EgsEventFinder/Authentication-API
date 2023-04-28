@@ -1,12 +1,14 @@
-from . import db, SECRET_KEY, ACCESS_EXPIRES
+from . import SECRET_KEY, ACCESS_EXPIRES, mysql
 from flask import Flask, Blueprint, url_for, render_template, request, jsonify
-from .models import User
 from werkzeug.security import generate_password_hash, check_password_hash
 from itsdangerous import URLSafeTimedSerializer, SignatureExpired
 import json
+#import jwt
 import redis
+#from datetime import datetime, timedelta, timezone
 from functools import wraps
 from flask_jwt_extended import jwt_required, create_access_token, get_jwt_identity, get_jwt
+
 
 auth = Blueprint("auth", __name__)
 
@@ -14,9 +16,10 @@ auth = Blueprint("auth", __name__)
 s = URLSafeTimedSerializer('Thisisasecret!')
 
 jwt_redis_blocklist = redis.StrictRedis(
-    host="127.0.0.1", port=6379, db=0, decode_responses=True
+    host="redis", port=6379, db=0, decode_responses=True
 )
-#localhost
+#localhost or 127.0.0.1 to run redis in the localhost
+
 
 #Decorater to check if token is revoked in the blockList otherwise check with jwt_required decorator
 def token_not_in_blackList(fn):
@@ -42,8 +45,14 @@ def register():
         email = data.get("email")
         password = data.get("password")
         
-        user = User.query.filter_by(username=username).first()#Secalhar fazer query por email
-        if user:
+        user = None
+        #user = User.query.filter_by(username=username).first()#Secalhar fazer query por email
+        with mysql.connection.cursor() as cur:
+            query = "SELECT * FROM user WHERE username = %s"
+            cur.execute(query,(username,))
+            user = cur.fetchone()
+        
+        if user != None:    
             #flash('Username already exists in', category = "error")
             return jsonify({'msg': 'Username already exists'}), 401
         elif len(email) <= 4:
@@ -59,12 +68,21 @@ def register():
         else:
             id = 0
             #get last id of the table
-            last_user = User.query.order_by(User.id.desc()).first()
-            if not last_user: #if the database its empty
+            #last_user = User.query.order_by(User.id.desc()).first()
+            last_user_id = None
+            with mysql.connection.cursor() as cur:
+                query = "SELECT id FROM user ORDER BY id DESC LIMIT 1"
+                cur.execute(query)
+                last_user_id = cur.fetchone()
+            
+            if last_user_id == None: #if the database its empty
                 id = 1
             else:
-                id = last_user.id + 1
+                id = last_user_id[0] + 1
             
+            #new_user = User(id= id,firstName=firstName, lastName=lastName, username=username, email=email, password = generate_password_hash(password, method='sha256'))
+            #db.session.add(new_user)
+            #db.session.commit()
             json_obj = {
                 "id": id,
                 "firstName": firstName,
@@ -76,7 +94,10 @@ def register():
             info = json.dumps(json_obj)
             token = s.dumps(info, salt='email-confirm')
             
+            #msg = Message('Confirm your Email', sender='eventFinderUA@outlook.com', recipients=[email])
             link = url_for('auth.validate', token=token, _external=True)
+            #msg.body = 'Hi {} {}! Your link to confirm the email is {}'.format(new_user.firstName, new_user.lastName, link)
+            #mail.send(msg)
             
             data = {
                 "to": email,
@@ -99,11 +120,18 @@ def validate(token):
         email =  user_info['email']
         password = user_info['password']
         
+        
+        with mysql.connection.cursor() as cur:
+            query = "INSERT INTO user (id, firstName, lastName, username, email, password) VALUES (%s, %s, %s, %s, %s, %s)"
+            cur.execute(query, (id, firstName, lastName, username, email, generate_password_hash(password, method='sha256'),))
+            mysql.connection.commit()
         #Add user to the database
-        new_user = User(id= id,firstName=firstName, lastName=lastName, username=username, email=email, password = generate_password_hash(password, method='sha256'))
-        db.session.add(new_user)
-        db.session.commit()
+        #new_user = User(id= id,firstName=firstName, lastName=lastName, username=username, email=email, password = generate_password_hash(password, method='sha256'))
+        #db.session.add(new_user)
+        #db.session.commit()
+        
     except SignatureExpired:
+        mysql.connection.rollback()
         return jsonify({'message': 'Token expired!'}), 401
     return jsonify({'message': 'Registration successful!'}), 200
 
@@ -113,22 +141,21 @@ def login():
         data = request.get_json()
         email = data.get("email")
         password = data.get("password")
+        #email = request.form.get("email")
+        #password = request.form.get("password")
         
-        user = User.query.filter_by(email=email).first()
-        if user:
-            if check_password_hash(user.password, password):
+        user = None
+        with mysql.connection.cursor() as cur:
+            query = "SELECT * FROM user WHERE email = %s"
+            cur.execute(query, (email,))
+            user = cur.fetchone()
+            
+        #user = User.query.filter_by(email=email).first()
+        if user != None:
+            if check_password_hash(user[5], password):
                 #Criar o token
-                token = create_access_token(identity={'userID': user.id})
+                token = create_access_token(identity={'userID': user[0]})
                 
-                # token = jwt.encode({
-                #     'userID': user.id,
-                #     'username': user.username,
-                #     'email': user.email,
-                #     'exp': datetime.timestamp(datetime.now(timezone.utc) + timedelta(minutes=5)) #expira dentro de 1 minuto
-                #     #'exp': datetime.datetime.utcnow() + datetime.timedelta(minutes=1)  
-                # }, SECRET_KEY)
-                # return jsonify({'token': token.encode().decode('utf-8')})
-                                
                 return jsonify({'msg': 'Login was a success!', 'access_token':token, 'Authorization':'Bearer {}'.format(token)}), 200
             else:
                 #flash('Incorrect password, try again', category='error')  
@@ -138,17 +165,27 @@ def login():
             return jsonify(message='Email doenst exist!'), 401 
                 
     return render_template("login.html")
-    
-    
+
 @auth.route('/user/email/<email>', methods=['GET'])
 def getUserID(email):
-    user = User.query.filter_by(email=email).first()
+    #user = User.query.filter_by(email=email).first()
+    user = None
+    with mysql.connection.cursor() as cur:
+        query = "SELECT * FROM user WHERE email = %s"
+        cur.execute(query, (email,))
+        user = cur.fetchone()
+    
     if user:
         #id = str(user.id)
-        return jsonify({"Information": "Sucess", "id": user.id, "username": user.username, "firstName": user.firstName, "lastName": user.lastName}), 200
+        return jsonify({"Information": "Success", "id": user[0], "username": user[3], "firstName": user[1], "lastName": user[2]}), 200
     return jsonify(Infomation="Not found"), 404
-    
-    
+
+# @auth.route('user/id/<userID>', methods=['GET'])
+# def getUserEmail(id):
+#     user = User.query.filter_by(id=id).first()
+#     email = user.email
+#     return jsonify(information=email)
+
 @auth.route('/logout', methods=['DELETE'])
 @jwt_required()
 @token_not_in_blackList
@@ -160,6 +197,7 @@ def logout():
     response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
     return response, 200
 
+#Function used just for testing the user permissions while logged in
 @auth.route('/protected', methods=['GET'])
 @jwt_required()
 @token_not_in_blackList
@@ -178,48 +216,46 @@ def protected():
 def verifyToken():
     subject = get_jwt()['sub'] # Return a dict -> 'sub' : {'userId': <id>}
     user_id = subject['userID']
-    user = User.query.filter_by(id=user_id).first()
+    
+    user = None
+    #user = User.query.filter_by(id=user_id).first()
+    with mysql.connection.cursor() as cur:
+        query = "SELECT * FROM user WHERE id = %s"
+        cur.execute(query, (user_id,))
+        user = cur.fetchone()
+    
     data = {
-        "user_id" : user.id,
-        "user_email": user.email,
-        "username": user.username,
+        "user_id" : user[0],
+        "user_email": user[4],
+        "username": user[3],
         "msg": "Token is validated."
     }
     return data, 200
 
  
 """
-def delete
 def showUsers
-def teste
 
 FUNÇÕES AUXILIARES
 
 """
 
-@auth.route('/teste', methods=['GET', 'POST'])
-@jwt_required()
-@token_not_in_blackList
-def teste():
-    user = get_jwt_identity()
-    id = user['userID']
-    user_fromDB = User.query.filter_by(id=id).first()
-    return "Only Logged in users can see it. User {} is logged in!!".format(user_fromDB.username)
-
-@auth.route('/delete/<id>', methods=['GET'])
-def delete(id):
-    user = User.query.filter_by(id = id).first()
-    db.session.delete(user)
-    db.session.commit()
-    return "Deleted the user with username {} and id {}".format(user.username, str(user.id))
-
-
 @auth.route('/users', methods=['GET'])
 def showUsers():
     usersList = []
-    for user in User.query.all():
-        user = {"id": user.id, "firstName": user.firstName, "lastName": user.lastName, "username" : user.username, "email": user.email, "password" : user.password}
+    with mysql.connection.cursor() as cur:
+        query = "SELECT * FROM user"
+        cur.execute(query)
+        result = cur.fetchall()
+
+    for user in result:
+        user = {"id": user[0], "firstName": user[1], "lastName": user[2], "username": user[3], "email": user[4], "password": user[5]}
         usersList.append(user)
+    
+    # usersList = []
+    # for user in User.query.all():
+    #     user = {"id": user.id, "firstName": user.firstName, "lastName": user.lastName, "username" : user.username, "email": user.email, "password" : user.password}
+    #     usersList.append(user)
     return json.dumps(usersList, indent=10)
     
 
