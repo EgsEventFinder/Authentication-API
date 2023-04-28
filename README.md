@@ -4,6 +4,13 @@
 
 > - pip install -r requirements.txt
 > 
-> Abrir o diretório onde tem o ficheiro main.py:
+
+
+> Criar a imagem (my-app) para a app:
 > 
-> - python3 main.py
+> - docker build -t my-app .
+
+
+> Abrir o diretório onde tem o ficheiro docker-compose.yml e correr a aplicação:
+> 
+> - docker-compose up
