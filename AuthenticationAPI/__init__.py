@@ -14,7 +14,7 @@ jtw = JWTManager()
 load_dotenv()
 
 SECRET_KEY = os.getenv('SECRET_KEY')
-ACCESS_EXPIRES = timedelta(minutes=5)
+ACCESS_EXPIRES = timedelta(minutes=30)
 app = Flask(__name__)
 
 def create_app():
@@ -34,8 +34,6 @@ def create_app():
     mysql.init_app(app)
     
     #db.init_app(app)
-    
-    
     jtw.init_app(app)
     
     app.config["JWT_ACCESS_TOKEN_EXPIRES"] = ACCESS_EXPIRES
@@ -44,16 +42,13 @@ def create_app():
     app.config['JWT_BLACKLIST_TOKEN_CHECKS'] = ['access'] #Access token should be check against the blacklist
 
     
-    #from .auth import auth as auth_blueprint
-    #app.register_blueprint(auth_blueprint)
     from .auth import auth
     app.register_blueprint(auth, url_prefix='/')
     
-    #from .models import User
-    # with app.app_context():
-    #     db.create_all()
     
     return app
+
+    
 
     
     
