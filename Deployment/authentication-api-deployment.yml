@@ -1,0 +1,170 @@
+# Api de autenticação
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: authenticationapi-deployment
+  namespace: egs-eventfinder
+  labels:
+    app: authentication-api
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: authentication-api
+  template:
+    metadata:
+      labels:
+        app: authentication-api
+    spec:
+      containers:
+      - name: authentication-api
+        image: registry.deti:5000/egs-eventfinder/authentication-api:v13
+        resources:
+          requests:
+            memory: "32Mi"
+            cpu: "10m"
+          limits:
+            memory: "128Mi"
+            cpu: "500m"
+        ports:
+        - containerPort: 5001
+        
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: authenticationapi-service
+  namespace: egs-eventfinder
+spec:
+  ports:
+  - port: 5001
+    protocol: TCP
+    targetPort: 5001
+  selector:
+    app: authentication-api
+  type: NodePort
+
+
+#Data base
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mysql
+  namespace: egs-eventfinder
+spec:
+  selector:
+    matchLabels:
+      app: mysql
+  template:
+    metadata:
+      labels:
+        app: mysql
+    spec:
+      containers:
+      - image: mysql:8.0
+        name: mysql
+        ports:
+        - containerPort: 3306
+          name: mysql
+        volumeMounts:
+          - name: mysql-persistent-storage
+            mountPath: /var/lib/mysql
+        env: 
+        #- name: MYSQL_DATABASE
+        #  value: users_db
+        #- name: MYSQL_USER
+        #  value: joaoT
+        #- name: MYSQL_PASSWORD
+        #  value: "12345"
+        #- name: MYSQL_ROOT_PASSWORD
+        #  value: "12345"
+        - name: MYSQL_ROOT_PASSWORD
+          value: root
+      volumes:
+        - name: mysql-persistent-storage
+          persistentVolumeClaim:
+            claimName: mysql-pv-claim
+          
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql
+  namespace: egs-eventfinder
+spec:
+  ports:
+  - port: 3306
+    protocol: TCP
+    name: mysql
+  selector:
+    app: mysql
+  type: NodePort
+
+
+#Redis
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis-deployment
+  namespace: egs-eventfinder
+  labels:
+    app: redis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      containers:
+      - name: redis
+        image: redis:latest
+        ports:
+        - containerPort: 6379
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-service
+  namespace: egs-eventfinder
+spec:
+  selector:
+    app: redis
+  ports:
+    - protocol: TCP
+      port: 6379
+      targetPort: 6379
+
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: authenticationapi-k3s
+  namespace: egs-eventfinder
+  annotations:
+    kubernetes.io/ingress.class: traefik
+    traefik.ingress.kubernetes.io/frontend-entry-points: http,https
+    traefik.ingress.kubernetes.io/redirect-entry-point: https
+    traefik.ingress.kubernetes.io/redirect-permanent: "true"
+spec:
+  rules:
+  - host: app-authentication.deti
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: authenticationapi-service
+            port:
+              number: 5001
