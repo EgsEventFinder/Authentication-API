@@ -1,4 +1,4 @@
-from . import SECRET_KEY, ACCESS_EXPIRES, mysql
+from . import SECRET_KEY, mysql
 from flask import Flask, Blueprint, url_for, render_template, request, jsonify
 from werkzeug.security import generate_password_hash, check_password_hash
 from itsdangerous import URLSafeTimedSerializer, SignatureExpired
@@ -7,7 +7,8 @@ import json
 import redis
 #from datetime import datetime, timedelta, timezone
 from functools import wraps
-from flask_jwt_extended import jwt_required, create_access_token, get_jwt_identity, get_jwt
+from flask_jwt_extended import jwt_required, create_access_token, get_jwt
+from datetime import timedelta
 
 
 auth = Blueprint("auth", __name__)
@@ -16,10 +17,10 @@ auth = Blueprint("auth", __name__)
 s = URLSafeTimedSerializer('Thisisasecret!')
 
 jwt_redis_blocklist = redis.StrictRedis(
-    host="redis", port=6379, db=0, decode_responses=True
+    host="redis-service", port=6379, db=0, decode_responses=True
 )
+#redis -> if u want to use with docker-compose use redis as host
 #localhost or 127.0.0.1 to run redis in the localhost
-
 
 #Decorater to check if token is revoked in the blockList otherwise check with jwt_required decorator
 def token_not_in_blackList(fn):
@@ -80,9 +81,6 @@ def register():
             else:
                 id = last_user_id[0] + 1
             
-            #new_user = User(id= id,firstName=firstName, lastName=lastName, username=username, email=email, password = generate_password_hash(password, method='sha256'))
-            #db.session.add(new_user)
-            #db.session.commit()
             json_obj = {
                 "id": id,
                 "firstName": firstName,
@@ -125,10 +123,6 @@ def validate(token):
             query = "INSERT INTO user (id, firstName, lastName, username, email, password) VALUES (%s, %s, %s, %s, %s, %s)"
             cur.execute(query, (id, firstName, lastName, username, email, generate_password_hash(password, method='sha256'),))
             mysql.connection.commit()
-        #Add user to the database
-        #new_user = User(id= id,firstName=firstName, lastName=lastName, username=username, email=email, password = generate_password_hash(password, method='sha256'))
-        #db.session.add(new_user)
-        #db.session.commit()
         
     except SignatureExpired:
         mysql.connection.rollback()
@@ -155,7 +149,7 @@ def login():
             if check_password_hash(user[5], password):
                 #Criar o token
                 token = create_access_token(identity={'userID': user[0]})
-                
+                 
                 return jsonify({'msg': 'Login was a success!', 'access_token':token, 'Authorization':'Bearer {}'.format(token)}), 200
             else:
                 #flash('Incorrect password, try again', category='error')  
@@ -180,11 +174,6 @@ def getUserID(email):
         return jsonify({"Information": "Success", "id": user[0], "username": user[3], "firstName": user[1], "lastName": user[2]}), 200
     return jsonify(Infomation="Not found"), 404
 
-# @auth.route('user/id/<userID>', methods=['GET'])
-# def getUserEmail(id):
-#     user = User.query.filter_by(id=id).first()
-#     email = user.email
-#     return jsonify(information=email)
 
 @auth.route('/logout', methods=['DELETE'])
 @jwt_required()
@@ -192,7 +181,7 @@ def getUserID(email):
 def logout():
     jti = get_jwt()['jti']
     print(f"jti: {jti}")
-    jwt_redis_blocklist.set(jti, "", ex=ACCESS_EXPIRES)
+    jwt_redis_blocklist.set(jti, "", ex=timedelta(minutes=5)) #Expires in 5 minutes in redis database
     response = jsonify(msg='User loggout successfully!')
     response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
     return response, 200
@@ -252,13 +241,8 @@ def showUsers():
         user = {"id": user[0], "firstName": user[1], "lastName": user[2], "username": user[3], "email": user[4], "password": user[5]}
         usersList.append(user)
     
-    # usersList = []
-    # for user in User.query.all():
-    #     user = {"id": user.id, "firstName": user.firstName, "lastName": user.lastName, "username" : user.username, "email": user.email, "password" : user.password}
-    #     usersList.append(user)
     return json.dumps(usersList, indent=10)
     
 
     
-
 
