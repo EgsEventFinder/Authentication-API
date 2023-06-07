@@ -19,8 +19,9 @@ s = URLSafeTimedSerializer('Thisisasecret!')
 jwt_redis_blocklist = redis.StrictRedis(
     host="redis-service", port=6379, db=0, decode_responses=True
 )
-#redis -> if u want to use with docker-compose use redis as host
+#redis -> if u want to use with docker-compose use redis as host and change in .env file
 #localhost or 127.0.0.1 to run redis in the localhost
+
 
 #Decorater to check if token is revoked in the blockList otherwise check with jwt_required decorator
 def token_not_in_blackList(fn):
@@ -49,13 +50,13 @@ def register():
         user = None
         #user = User.query.filter_by(username=username).first()#Secalhar fazer query por email
         with mysql.connection.cursor() as cur:
-            query = "SELECT * FROM user WHERE username = %s"
-            cur.execute(query,(username,))
+            query = "SELECT * FROM user WHERE username = %s OR email = %s" 
+            cur.execute(query,(username, email))
             user = cur.fetchone()
         
         if user != None:    
             #flash('Username already exists in', category = "error")
-            return jsonify({'msg': 'Username already exists'}), 401
+            return jsonify({'msg': 'Username or email already exists'}), 401
         elif len(email) <= 4:
             return jsonify({'msg': 'Email too short!'}), 406
         elif len(firstName) <= 2:
@@ -92,10 +93,7 @@ def register():
             info = json.dumps(json_obj)
             token = s.dumps(info, salt='email-confirm')
             
-            #msg = Message('Confirm your Email', sender='eventFinderUA@outlook.com', recipients=[email])
             link = url_for('auth.validate', token=token, _external=True)
-            #msg.body = 'Hi {} {}! Your link to confirm the email is {}'.format(new_user.firstName, new_user.lastName, link)
-            #mail.send(msg)
             
             data = {
                 "to": email,
@@ -103,7 +101,7 @@ def register():
             }
             
             return data, 200
-            
+                
     return render_template("register.html")
 
 @auth.route('/validate/<token>')
@@ -149,7 +147,7 @@ def login():
             if check_password_hash(user[5], password):
                 #Criar o token
                 token = create_access_token(identity={'userID': user[0]})
-                 
+                
                 return jsonify({'msg': 'Login was a success!', 'access_token':token, 'Authorization':'Bearer {}'.format(token)}), 200
             else:
                 #flash('Incorrect password, try again', category='error')  
@@ -245,4 +243,5 @@ def showUsers():
     
 
     
+
 
